@@ -50,7 +50,8 @@
 #                                (csf+builtin and csf+non-r36p0 hard-fail)
 #   DRIVER_MODE=module           module (kernel once, .ko swap) | builtin
 #   FUZZ_MINUTES=0               0 = no fuzz session; else bounded minutes
-#   LAB_ROOT=~/mali-uaf-lab
+#   LAB_ROOT=<dir of this script>  default: the repo root the script lives in
+#                                (e.g. /workspaces/mali-uaf-lab on a codespace)
 #   STAGING_DIR=$LAB_ROOT/staging   copy non-downloadable inputs here
 #   --with-drivers a,b           also build+test these drivers against the
 #                                same kernel (e.g. the r28p0/r29p0 pair)
@@ -72,12 +73,15 @@
 # go1.27.1 (go.dev), syzkaller @357b6724 (github.com/google/syzkaller), and
 # for ARCH=arm64: busybox-1.38.0 (busybox.net), dropbear-2026.94
 # (matt.ucc.asn.au), mali driver tarballs when not staged (developer.arm.com,
-# hash-pinned where the download name matches the staged archive name).
+# hash-pinned where the download name matches the staged arachive name).
 # =============================================================================
 set -euo pipefail
 
 # ------------------------------ CONFIGURATION --------------------------------
-LAB_ROOT="${LAB_ROOT:-$HOME/mali-uaf-lab}"
+# LAB_ROOT defaults to the script's own directory (the repo root — e.g.
+# /workspaces/mali-uaf-lab on a codespace, wherever the checkout sits
+# elsewhere); override via env to run the lab elsewhere.
+LAB_ROOT="${LAB_ROOT:-$(cd "$(dirname "$0")" && pwd)}"
 STAGING_DIR="${STAGING_DIR:-$LAB_ROOT/staging}"
 ARCH="${ARCH:-arm64}"                       # arm64 (default, guide DT path) | x86_64
 KERNEL_VERSION="${KERNEL_VERSION:-5.10.30}"
