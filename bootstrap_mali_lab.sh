@@ -54,7 +54,9 @@
 #   STAGING_DIR=$LAB_ROOT/staging   copy non-downloadable inputs here
 #   --with-drivers a,b           also build+test these drivers against the
 #                                same kernel (e.g. the r28p0/r29p0 pair)
-#   --install-prereqs            allow apt-get install of missing packages
+#   --install-prereqs            (default behavior) apt-get install missing
+#                               tools when absent — kept for compat
+#   --no-install-prereqs        never install; hard-fail listing missing tools
 #   --force                      ignore stamps, rerun stages
 #
 # Staged inputs (SHA-256 pinned; the sources stage prints exact copy
@@ -84,7 +86,7 @@ MALI_MODE="${MALI_MODE:-jm}"                # r36p0 only: jm (default) | csf
 DRIVER_MODE="${DRIVER_MODE:-module}"
 KERNEL_JOBS="${KERNEL_JOBS:-$(nproc 2>/dev/null || echo 2)}"
 FUZZ_MINUTES="${FUZZ_MINUTES:-0}"
-INSTALL_PREREQS="${INSTALL_PREREQS:-0}"
+INSTALL_PREREQS="${INSTALL_PREREQS:-1}"   # auto-install missing tools by default; --no-install-prereqs (or =0) opts out to hard-fail instead
 FORCE="${FORCE:-0}"
 STAGE="${STAGE:-all}"
 WITH_DRIVERS="${WITH_DRIVERS:-}"
@@ -11408,7 +11410,7 @@ stage_prereqs() {
   for c in "${arch_tools[@]}"; do
     command -v "$c" >/dev/null 2>&1 || missing+=("$c")
   done
-  # package-name mapping for --install-prereqs
+  # package-name mapping for the apt auto-install
   for m in "${missing[@]+"${missing[@]}"}"; do
     case "$m" in
       qemu-system-x86_64)     pkgs+=("qemu-system-x86");;
@@ -11423,11 +11425,20 @@ stage_prereqs() {
   if [ "${#missing[@]}" -gt 0 ]; then
     if [ "$INSTALL_PREREQS" = 1 ]; then
       log "installing missing packages: ${pkgs[*]}"
-      sudo apt-get update -qq
-      sudo apt-get install -y --no-install-recommends "${pkgs[@]}" build-essential \
-        libssl-dev libelf-dev
+      local aptcmd=(apt-get)
+      if [ "$(id -u)" != 0 ]; then
+        command -v sudo >/dev/null 2>&1 \
+          || fail "missing tools: ${missing[*]} and no root/sudo to install them
+  Install manually: sudo apt-get install -y --no-install-recommends ${pkgs[*]} build-essential libssl-dev libelf-dev"
+        aptcmd=(sudo apt-get)
+      fi
+      "${aptcmd[@]}" update -qq \
+        || fail "apt-get update failed — fix apt networking/proxy, then rerun (or use --no-install-prereqs and install manually)"
+      "${aptcmd[@]}" install -y --no-install-recommends "${pkgs[@]}" build-essential \
+        libssl-dev libelf-dev \
+        || fail "apt-get install failed — install manually: sudo apt-get install -y --no-install-recommends ${pkgs[*]} build-essential libssl-dev libelf-dev"
     else
-      fail "missing tools: ${missing[*]} — rerun with --install-prereqs or install manually"
+      fail "missing tools: ${missing[*]} — install manually, or rerun without --no-install-prereqs"
     fi
   fi
   gate "prereqs: toolchain complete (ARCH=$ARCH)" bash -c \
@@ -12784,6 +12795,7 @@ while [ $# -gt 0 ]; do
     all|payloads|prereqs|sources|kernel|driver|guest-test|syzkaller|fuzz|report) STAGE="$1";;
     --with-drivers) WITH_DRIVERS="${2:-}"; shift;;
     --install-prereqs) INSTALL_PREREQS=1;;
+    --no-install-prereqs) INSTALL_PREREQS=0;;
     --force) FORCE=1;;
     -h|--help) usage; exit 0;;
     *) usage; echo "unknown arg: $1" >&2; exit 2;;
